@@ -42,6 +42,9 @@ class VideoProcessor:
 
         # Per-track violation highlight window
         self.violation_until: Dict[int, float] = {}
+        # Focus on severe violator (wrong-way)
+        self.focus_track_id: Optional[int] = None
+        self.focus_until: float = 0.0
 
         # Optional models
         self.helmet_model: Optional[YOLO] = None
@@ -89,6 +92,8 @@ class VideoProcessor:
         self.track_history.clear()
         self.wrong_way_counter.clear()
         self.violation_until.clear()
+        self.focus_track_id = None
+        self.focus_until = 0.0
 
     def set_signal_state(self, state: str) -> None:
         state = state.lower().strip()
@@ -113,6 +118,10 @@ class VideoProcessor:
         # Set highlight for violations (exclude informational alerts like plate_read)
         if kind != "plate_read" and track_id is not None and track_id >= 0:
             self.violation_until[track_id] = now + 3.0  # highlight for 3 seconds
+        # Focus on wrong-way offenders for stronger emphasis
+        if kind == "wrong_way" and track_id is not None and track_id >= 0:
+            self.focus_track_id = track_id
+            self.focus_until = now + 5.0
 
     def _ensure_ocr(self):
         if self.ocr_reader is None:
@@ -186,6 +195,14 @@ class VideoProcessor:
             detections.tracker_id = None
             tracked = self.tracker.update_with_detections(detections)
 
+            # Prepare auto lane direction buffers
+            if self.roi.auto_lane_direction and len(self.roi.lane_directions) == 0:
+                if not hasattr(self, "lane_dir_samples"):
+                    self.lane_dir_samples = [deque(maxlen=600) for _ in lane_contours]
+                # adjust length if lanes changed
+                if len(self.lane_dir_samples) != len(lane_contours):
+                    self.lane_dir_samples = [deque(maxlen=600) for _ in lane_contours]
+
             # Draw ROIs
             if stop_line_px is not None:
                 pt1, pt2 = stop_line_px
@@ -235,6 +252,11 @@ class VideoProcessor:
                             vx = (xn - x0) / dt
                             vy = (yn - y0) / dt
                             speed_pxps = (vx*vx + vy*vy) ** 0.5
+                            # collect samples for auto lane direction
+                            if self.roi.auto_lane_direction and len(self.roi.lane_directions) == 0 and speed_pxps >= 30.0:
+                                mag = (vx*vx + vy*vy) ** 0.5
+                                if mag > 1e-6 and lane_index >= 0 and lane_index < len(self.lane_dir_samples):
+                                    self.lane_dir_samples[lane_index].append((vx/mag, vy/mag))
                             if lane_index < len(self.lane_dirs_unit):
                                 dx, dy = self.lane_dirs_unit[lane_index]
                                 dot = vx * dx + vy * dy
@@ -336,6 +358,28 @@ class VideoProcessor:
                 if self.violation_until.get(tid, 0) > now2:
                     x1, y1, x2, y2 = map(int, tracked.xyxy[i])
                     cv2.putText(frame, "VIOLATED", (x1, max(0, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2, cv2.LINE_AA)
+
+            # Focus effect for wrong-way offender
+            if self.focus_track_id is not None and self.focus_until > now2 and tracked.tracker_id is not None:
+                # find bbox for focus id
+                focus_bbox = None
+                for i in range(len(tracked)):
+                    if int(tracked.tracker_id[i]) == int(self.focus_track_id):
+                        focus_bbox = tracked.xyxy[i]
+                        break
+                if focus_bbox is not None:
+                    x1, y1, x2, y2 = map(int, focus_bbox)
+                    x1 = max(0, x1); y1 = max(0, y1); x2 = min(w-1, x2); y2 = min(h-1, y2)
+                    base = frame.copy()
+                    overlay = frame.copy()
+                    # dim everything
+                    overlay[:] = (30,30,30)
+                    frame = cv2.addWeighted(overlay, 0.5, frame, 0.5, 0)
+                    # restore focused area
+                    frame[y1:y2, x1:x2] = base[y1:y2, x1:x2]
+                    # strong red rectangle and label
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0,0,255), 4)
+                    cv2.putText(frame, "FOCUS", (x1, max(0, y1 - 24)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,255), 2, cv2.LINE_AA)
 
             with self.frame_lock:
                 self.last_frame = frame.copy()

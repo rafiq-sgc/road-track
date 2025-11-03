@@ -1,17 +1,40 @@
-# Road Tracker (Local Dev)
+# Road Tracker Pro
 
-Local FastAPI app that analyzes live or recorded road video to detect vehicles/people, track them, and flag basic rule violations (stop-line on red, lane zone crossing). Streams annotated frames over MJPEG and exposes an alerts API.
+**Production-ready FastAPI application** that analyzes live or recorded road video to detect vehicles/people, track them, and flag traffic rule violations with evidence saving, real-time alerts, and auto-learning capabilities.
 
-## Features (dev)
-- YOLOv8n (free, pre-trained) for detection (people/vehicles)
-- ByteTrack via Supervision for multi-object tracking
-- Zones: lanes (polygons), stop-line (line) loaded from JSON
-- Violations (MVP):
-  - Red light violation: crossing stop-line while signal==red
-  - Lane-zone violation: tracked object outside allowed lane polygon
-- Input: webcam (0) or video file path
-- Output: MJPEG stream `/stream`, JSON alerts `/alerts`
-- Control: start/stop processing, set signal state (`/signal`)
+> 🚀 **Quick Start**: See `QUICK_START.md` for 3-step setup
+> 📚 **Full Guide**: See `DEPLOYMENT_GUIDE.md` for production deployment
+> ✅ **Status**: See `PRODUCTION_READY_SUMMARY.md` for all features
+
+## Features
+
+### Core Detection & Tracking
+- **YOLOv8n** (free, CPU-optimized) for vehicles, people, motorcycles, buses, trucks, bicycles
+- **ByteTrack** for stable multi-object tracking with persistent IDs
+- **8-12 FPS** on CPU (Intel i5/i7) with 1080p video
+
+### Violation Detection
+- ✅ **Wrong-Way**: Auto-learns lane direction, flags opposite travelers with spotlight focus
+- ✅ **Red Light**: Crossing stop line while signal is red
+- ✅ **Lane**: Objects outside designated lane polygons
+- ✅ **Speeding**: With pixel-to-meter calibration
+- ✅ **No Helmet**: Optional (requires custom YOLO model)
+- ✅ **Plate Reading**: Optional OCR with EasyOCR
+
+### Production Features (V2)
+- 🔥 **Alert Debouncing**: 5s cooldown prevents spam
+- 💾 **Evidence Saving**: Auto-saves crops + full frames for violations
+- 📊 **Performance Metrics**: Real-time FPS, detection count, uptime
+- ⚡ **WebSocket Alerts**: Real-time push (<50ms latency)
+- 📥 **CSV Export**: Download violation history
+- 🎯 **Auto Lane Learning**: Robust median-based direction detection
+- 🔍 **Smart Focus**: Spotlight effect on wrong-way violators
+- 📝 **Professional Logging**: Python logging throughout
+
+### Deployment
+- 🐳 **Docker**: One-command deployment
+- 🔧 **Systemd**: Linux service integration
+- 🌐 **Nginx**: Reverse proxy config included
 
 ## Install
 ```bash
@@ -19,11 +42,24 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Run (dev)
+## Run
+
+### Development Mode (V2 - Recommended)
+```bash
+uvicorn app.main_v2:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Legacy Mode (V1 - Basic)
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
 Open http://localhost:8000 in your browser.
+
+### Docker (Production)
+```bash
+docker-compose up -d
+```
 
 ## Configure ROIs
 Edit `app/config/roi_config.example.json` and save as `app/config/roi_config.json`.
@@ -33,13 +69,46 @@ Edit `app/config/roi_config.example.json` and save as `app/config/roi_config.jso
 
 Calibrate once per camera/view. For quick tests, keep defaults.
 
-## Usage
-- Start webcam: `POST /start` with `{ "source": 0 }`
-- Start video: `POST /start` with `{ "source": "/path/to/video.mp4" }`
-- Set signal state: `POST /signal` `{ "state": "red" | "green" }`
-- Watch stream: GET `/` or `/stream`
-- Get alerts: GET `/alerts`
-- Stop: `POST /stop`
+## Quick Usage
+
+**V2 (Production - Recommended)**:
+```bash
+uvicorn app.main_v2:app --reload --host 0.0.0.0 --port 8000
+```
+Open http://localhost:8000
+
+**V1 (Legacy - Basic)**:
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### API Endpoints
+- `POST /start` - Start with `{ "source": 0 }` or `{ "source": "/path/video.mp4" }`
+- `POST /stop` - Stop processing
+- `POST /signal` - Set state `{ "state": "red" | "green" }`
+- `GET /stream` - MJPEG stream
+- `GET /alerts` - Recent alerts (JSON)
+- `GET /metrics` - Performance metrics (V2)
+- `GET /evidence/recent` - Saved violations (V2)
+- `WebSocket /ws/alerts` - Real-time push (V2)
+
+---
+
+## 📖 Complete Documentation
+
+| Document | Purpose | Read If... |
+|----------|---------|------------|
+| **START_HERE.md** | 📍 Entry point | First time user |
+| **QUICK_START.md** | ⚡ 3-step setup | Want to test NOW |
+| **FEATURES_AND_USAGE.md** | 📚 Complete guide | Want all details |
+| **PRODUCTION_READY_SUMMARY.md** | ✨ V2 improvements | Want to see what's new |
+| **DEPLOYMENT_GUIDE.md** | 🚀 Production deploy | Ready to deploy |
+| **ARCHITECTURE.md** | 🏗️ Technical deep dive | Developer/architect |
+| **VISUAL_GUIDE.md** | 🎨 Visual examples | Visual learner |
+| **TESTING_CHECKLIST.md** | ✅ Systematic tests | QA testing |
+| **MIGRATION_TO_V2.md** | 🔄 V1→V2 upgrade | Upgrading from V1 |
+
+**Start with**: `START_HERE.md` → Then choose your path!
 
 ## Notes
 - Speeding requires calibration (homography) + FPS → left as extension.
